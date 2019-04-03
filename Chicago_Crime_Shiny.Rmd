@@ -1,0 +1,183 @@
+---
+title: "Chicago_Crime_Shiny"
+author: "Raj Desai"
+date: "4/3/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Creating the UI for the Shiny App
+```{r}
+# Defining the Dashboard Layout
+
+# Defining the theme of the Dashboard
+ui <- shinyUI(dashboardPage(skin="yellow", 
+                            #Giving Dashboard a title
+                            dashboardHeader(title = "Chicago Crime Rate"), 
+                            # Creating the tabs on the sidebar
+                            dashboardSidebar(
+                              sidebarUserPanel("Created by : Raj Desai"),
+                            # Defining tabs on the sidebar  
+                              sidebarMenu(
+                                menuItem("Heat Map", tabName = "heatmap", icon = icon("fire")),
+                                menuItem("Map",tabName = "map",icon = icon("map-marker-alt")),
+                                menuItem("Bar Chart", tabName = "crimetypesmonth", icon = icon("chart-bar"))
+                                
+                            )), 
+                            # Declaring the body of the Dashboard where the graphs will be rendered
+                            dashboardBody(
+                              tags$head(
+                                tags$link(rel = "stylesheet", type = "text/css", href = "style.css")),
+                              # Setting up inputs for thr bar chart
+                              tabItems(
+                                tabItem(tabName = 'crimetypesmonth',
+                                        selectInput(inputId='crimetype', label=h4('Select Crime Type'), choices = choice4,
+                                                    selected = 'HOMICIDE'),
+                                        plotlyOutput('crimetypesmonth', height = "auto", width ="auto")),
+                                # Setting up inputs and layout for the heat map
+                                tabItem(tabName='heatmap',
+                                        h2("Relationship between Crime Type and Hour of the Day"),
+                                        div(class="outer",
+                                            tags$head(
+                                              tags$style(type = "text/css", "#heatmap {height: calc(100vh - 80px) !important;}"
+                                              ))),
+                                        
+                                        leafletOutput("heatmap",width = '100%',height = '100%'),
+                                        
+                                        div(class="outer"), 
+                                        absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE, draggable = TRUE,
+                                                      top = 150, left = "auto", right = 15, bottom = "auto",
+                                                      width = 200, height = "auto",
+                                                      selectInput(inputId="type", label=h4("Select Crime Type"),choices=choice4, selected=('HOMICIDE')),
+                                                      sliderInput(inputId = "hour", label = h4("Select Hour"), min=0, max=24, step =1,
+                                                                  sep='', value = c(12,24)))),
+                                # Setting up inputs and layout of the map
+                                tabItem(tabName='map',
+                                        h2("Location of Crime by Date"),
+                                        h5("Drill down within the culsters to know the exact location and type of crime"),
+                                        div(class="outer",
+                                            tags$head(
+                                              tags$style(type = "text/css", "#map {height: calc(100vh - 80px) !important;}")
+                                            )),
+                                        leafletOutput("map",width = '100%',height = '100%'),
+                                        
+                                        absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE, draggable = TRUE, 
+                                                      top = 150, left = "auto", right = 15, bottom = "auto",
+                                                      width = 200, height = "auto",
+                                                      dateInput("date", "Select Date:", value = Sys.Date()-365))
+                                )))))
+                                
+```
+
+# Creating the rendering server for the Shiny App
+
+```{r}
+# Defining the server function
+server <- shinyServer(function(input, output, session) {
+  
+################## DRAW BAR GRAPH FOR CRIME RATES BY MONTH #######################    
+  
+  observeEvent(
+    eventExpr = input[["crimetype"]],
+    handlerExpr = {
+      # Extracting data for bar plot based on crime type and month
+      reactbargraph2 =  data[data$primary_type == input$crimetype,] %>%
+        group_by(month) %>%
+        summarise(Crimerate=(n()))
+      
+      output$crimetypesmonth = renderPlotly({
+        
+        f2 <- list(
+          family = "Helvetica Neue', Helvetica",
+          size = 14,
+          color = "black")
+        
+        # Usinf plotly to create a bar plot 
+        p <- plot_ly(data=reactbargraph2, x = ~month, y = ~Crimerate, type = 'bar', width =0.1,
+                     marker = list(color = 'rgb(23, 190, 207)',
+                                   line = list(color = 'transparent')),
+                     add_text = list(text= ~Crimerate, textposition="top center")) %>%
+          layout(title = "Trend of Crime by Month",
+                 titlefont = f2,
+                 xaxis = list(title = "Month"),
+                 yaxis = list(title = "Instances of Crime by Type"),
+                 plot_bgcolor = "#FFFFFF",
+                 paper_bgcolor='#FFFFFF',
+                 height=400,
+                 width=650,
+                 bargap = 0.7)
+        
+      })
+    })
+  ################## HEATMAP REACTIVE DATA #######################   
+  # Extracting data for the heat map
+  reactheatmap=reactive({
+    data %>%
+      filter(primary_type %in% input$type &
+               #desc_classifier %in% input$premises &
+               hour %in% cbind(input$hour[1],input$hour[2]))
+
+
+  })
+  
+  ################## DRAWS INITIAL HEATMAP #######################    
+  #  Plotting the heat map using the leaflet package
+  output$heatmap=renderLeaflet({
+  
+    leaflet() %>% 
+      addProviderTiles(providers$CartoDB.DarkMatter) %>% 
+      setView(-87.6105, 41.8947,zoom=11)
+  })
+  observe({
+    proxy=leafletProxy("heatmap", data = reactheatmap) %>%
+      removeWebGLHeatmap(layerId='a') %>%
+      addWebGLHeatmap(layerId='a',data=reactheatmap(),
+                      lng=~Longitude, lat=~Latitude,
+                      size=8000)
+  })
+  
+  
+  # Extracting data for plotting the map
+  reactmap=reactive({
+    data %>% 
+      filter( date_alone == input$date)
+    
+  })
+
+  
+  ################## DRAWS INITIAL REGULAR MAP #######################
+  # Plotting the map
+  output$map=renderLeaflet({
+    leaflet() %>% 
+      addProviderTiles(providers$Esri.WorldStreetMap) %>% 
+      setView(-87.6105, 41.8947,zoom=11)
+  })
+  observe({
+    proxy=leafletProxy("map", data=reactmap()) %>% 
+      clearMarkers() %>%
+      clearMarkerClusters() %>%
+      addCircleMarkers(clusterOptions=markerClusterOptions(), 
+                       lng=~Longitude, lat=~Latitude,radius=5, group='Cluster',
+                       popup=~paste('<b><font color="Black">','Crime Information','</font></b><br/>',
+                                    'Crime Type:', primary_type,'<br/>',
+                                    'Date:', date_alone,'<br/>',
+                                    #'Time:', Time,'<br/v',
+                                    'Arrest:', Arrest, '<br/>',
+                                    'Location:', location_description,'<br/>')) 
+    
+  }) 
+})
+  
+```
+
+# Running the app
+
+```{r}
+ shinyApp(ui,server) 
+```
+
+
+

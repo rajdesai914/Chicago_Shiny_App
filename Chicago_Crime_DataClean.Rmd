@@ -1,0 +1,79 @@
+---
+title: "Chicago_Crime_DataClean"
+author: "Raj Desai"
+date: "4/2/2019"
+output: html_document
+---
+
+
+
+
+##Data Cleaning Script for the Chicago Crime Rate Shiny Dashboard
+
+#Loading Dependenceis
+
+```{r}
+library(devtools)
+install_github('ramnathv/rCharts@dev')
+install_github('ramnathv/rMaps')
+```
+
+```{r}
+list.of.packages <- c("devtools","shiny","shinydashboard","ggplot2","data.table","leaflet",
+                      "dplyr","plotly","DT","leaflet.extras","rMaps","xts","highcharter",
+                      "shinythemes","markdown","anytime","lubridate") 
+```
+
+```{r}
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])] 
+```
+
+```{r}
+if(length(new.packages)) install.packages(new.packages)   
+```
+
+# Reading the Crime record dataset from Chicago for the year 2018
+```{r}
+data<-read.csv("~/Downloads/BUAN6357_Shiny2_Desai/Crimes-2018.csv", stringsAsFactors=F)
+```
+
+# Creating the Date Columns
+```{r}
+library(lubridate)
+data$Date <- mdy_hms(data$Date)
+
+data$year <- year(data$Date)
+data$month <- month(data$Date,label = T,abbr = T)
+data$month <- as.ordered(data$month)
+data$hour <- hour(data$Date)
+data$day_of_week <- wday(data$Date)
+data$date_alone <- date(data$Date)
+colnames(data)[colnames(data)=="Primary Type"] <- "primary_type"
+colnames(data)[colnames(data)=="Location Description"] <- "location_description"
+```
+
+# Creating the metrics for Analysis
+```{r}
+library(dplyr)
+#Creating metrics 
+count_by_type <- data %>%
+  group_by(primary_type) %>%
+  summarise(Count=n())
+
+count_by_month <- data %>% 
+  group_by(month) %>%
+  summarise(Count=n())
+
+count_by_hour <- data %>%
+  group_by(hour) %>%
+  summarise(Count=n())
+```
+
+# Extracting unique values for drop downs in the app
+```{r}
+choice3=unique(count_by_premises$location_description)
+choice4=unique(count_by_type$primary_type)
+chicagopop=2700000
+```
+
+
